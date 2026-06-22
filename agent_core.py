@@ -16,6 +16,16 @@ Cada función pública devuelve un dict con la estructura:
     "message": str,           # Mensaje legible
     "ai_content": { ... }     # Contenido generado por IA (opcional)
   }
+
+La función publicar_lote_noticias() devuelve:
+  {
+    "success": bool,
+    "total": int,
+    "publicados": int,
+    "borradores": int,
+    "errores": int,
+    "items": [ { resultado individual... } ]
+  }
 """
 
 import time
@@ -29,6 +39,7 @@ from agent_config import (
     GEMINI_API_KEY, GEMINI_MODEL,
     DEFAULT_AI_TONE, AI_TONE_INSTRUCTIONS,
     EVENT_CATEGORIES, EVENT_CAT_MAP_INV,
+    PUBLISH_LIMIT, DEFAULT_WP_STATUS, AUTO_PUBLISH_FIRST,
 )
 
 # Inicializar cliente IA
@@ -314,11 +325,29 @@ def _get_post_url(post_id: int, post_type: str = "posts") -> str | None:
     return None
 
 
+def _resolve_wp_status(position: int, status_override: str | None,
+                        auto_publish_first: int, default_status: str) -> str:
+    """
+    Calcula el estado WP (publish | draft) para el item en posición `position`
+    (1-based) dentro de un lote.
+
+    Lógica:
+      1. Si el payload individual trae un `estado` explícito, ese prevalece.
+      2. Si auto_publish_first > 0 y position <= auto_publish_first → "publish"
+      3. En caso contrario → default_status
+    """
+    if status_override:
+        return status_override
+    if auto_publish_first > 0 and position <= auto_publish_first:
+        return "publish"
+    return default_status
+
+
 # ==========================================
 # ACCIONES PRINCIPALES DEL AGENTE
 # ==========================================
 
-def publicar_noticia(payload: dict) -> dict:
+def publicar_noticia(payload: dict, _position: int = 1) -> dict:
     """
     Crea o actualiza una noticia en WordPress.
 
@@ -332,12 +361,17 @@ def publicar_noticia(payload: dict) -> dict:
       - categoria_ids (list[int]): IDs de categorías WP
       - tono_ia (str): periodistico | rockero | social | custom
       - instrucciones_custom (str): Solo si tono_ia = "custom"
-      - estado (str): publish | draft | future (default: publish)
+      - estado (str): publish | draft | future
+                      Si no se especifica, se usa la lógica de DEFAULT_WP_STATUS
+                      y AUTO_PUBLISH_FIRST según la posición en el lote.
       - fecha_publicacion (str): ISO 8601, p.ej. "2025-01-15T21:00:00"
       - imagen_url (str): URL de imagen a subir como destacada
       - generar_excerpt (bool): Si True, usa IA para crear extracto
       - generar_social (bool): Si True, genera copy para redes
       - wp_post_id (int): Si se proporciona, actualiza en lugar de crear
+
+    Parámetro interno:
+      - _position (int): Posición 1-based dentro del lote (para calcular draft/publish)
     """
     titulo = payload.get("titulo", "").strip()
     if not titulo:
@@ -377,18 +411,29 @@ def publicar_noticia(payload: dict) -> dict:
         ai_content["social_copy"] = social_copy
         print("  ✅ Copy social generado.")
 
-    # 4. Subir imagen (si se proporciona URL)
+    # 4. Subir imagen
     img_id = None
     if payload.get("imagen_url"):
         print(f"  📷 Subiendo imagen: {payload['imagen_url']}")
         img_id = _upload_image_from_url(payload["imagen_url"])
 
-    # 5. Construir payload WordPress
+    # 5. Resolver estado de publicación
+    # El campo "estado" del payload tiene prioridad; si no viene, se calcula
+    # en función de la posición en el lote y la config AUTO_PUBLISH_FIRST.
+    wp_status = _resolve_wp_status(
+        position=_position,
+        status_override=payload.get("estado"),
+        auto_publish_first=AUTO_PUBLISH_FIRST,
+        default_status=DEFAULT_WP_STATUS,
+    )
+    print(f"  📋 Estado WP: {wp_status} (posición {_position} en el lote)")
+
+    # 6. Construir payload WordPress
     wp_payload = {
         "title": titulo,
         "content": content_html,
         "excerpt": excerpt,
-        "status": payload.get("estado", "publish"),
+        "status": wp_status,
         "categories": payload.get("categoria_ids", []),
     }
     if payload.get("fecha_publicacion"):
@@ -396,7 +441,7 @@ def publicar_noticia(payload: dict) -> dict:
     if img_id:
         wp_payload["featured_media"] = img_id
 
-    # 6. Publicar en WordPress
+    # 7. Publicar en WordPress
     post_id = payload.get("wp_post_id")
     try:
         if post_id:
@@ -412,12 +457,14 @@ def publicar_noticia(payload: dict) -> dict:
             data = res.json()
             post_id = data.get("id")
             url = data.get("link")
-            print(f"  ✅ Noticia {action}: ID={post_id}, URL={url}")
+            status_label = "📝 borrador" if wp_status == "draft" else "✅ publicada"
+            print(f"  {status_label} Noticia {action}: ID={post_id}, URL={url}")
             return {
                 "success": True,
                 "id": post_id,
                 "url": url,
-                "message": f"✅ Noticia {action} correctamente",
+                "wp_status": wp_status,
+                "message": f"✅ Noticia {action} como {wp_status}",
                 "ai_content": ai_content,
             }
         else:
@@ -429,7 +476,131 @@ def publicar_noticia(payload: dict) -> dict:
         return {"success": False, "message": f"❌ Excepción: {e}"}
 
 
-def publicar_evento(payload: dict) -> dict:
+def publicar_lote_noticias(payload: dict) -> dict:
+    """
+    Procesa un lote de noticias en una sola llamada.
+
+    Campos en payload:
+      - noticias (list[dict]): Lista de payloads individuales de noticia.
+                               Cada item sigue el mismo formato que publicar_noticia().
+      - limite (int, opcional): Cuántos items procesar.
+                                  N > 0 → procesa los primeros N
+                                 -1     → procesa todos
+                                Sobreescribe la variable de entorno PUBLISH_LIMIT.
+      - auto_publish_first (int, opcional): Los primeros N se publican, el resto borrador.
+                                            Sobreescribe AUTO_PUBLISH_FIRST del entorno.
+      - estado_defecto (str, opcional): "draft" | "publish"
+                                        Sobreescribe DEFAULT_WP_STATUS del entorno.
+      - tono_ia (str, opcional): Tono por defecto para todos si no llevan el suyo.
+      - generar_excerpt (bool, opcional): Por defecto True.
+      - generar_social (bool, opcional): Por defecto False.
+
+    Devuelve:
+      {
+        "success": bool,
+        "total_recibidas": int,
+        "total_procesadas": int,
+        "publicados": int,
+        "borradores": int,
+        "errores": int,
+        "items": [ { resultado individual... } ]
+      }
+    """
+    noticias = payload.get("noticias", [])
+    if not noticias:
+        return {
+            "success": False,
+            "message": "❌ 'noticias' es obligatorio y debe ser una lista no vacía",
+        }
+
+    # Parámetros de control (payload tiene prioridad sobre config/env)
+    limite = int(payload.get("limite", PUBLISH_LIMIT))
+    auto_pub_first = int(payload.get("auto_publish_first", AUTO_PUBLISH_FIRST))
+    estado_defecto = payload.get("estado_defecto", DEFAULT_WP_STATUS)
+    tono_global = payload.get("tono_ia", DEFAULT_AI_TONE)
+    generar_excerpt_global = payload.get("generar_excerpt", True)
+    generar_social_global = payload.get("generar_social", False)
+
+    total = len(noticias)
+
+    # Aplicar límite
+    if limite == -1:
+        a_procesar = noticias
+        print(f"\n📦 Lote de {total} noticias → procesando TODAS")
+    else:
+        a_procesar = noticias[:limite]
+        print(f"\n📦 Lote de {total} noticias → procesando las primeras {len(a_procesar)}")
+
+    if auto_pub_first > 0:
+        print(f"  🔓 Auto-publicar las primeras {auto_pub_first} | resto → {estado_defecto}")
+    else:
+        print(f"  📋 Estado por defecto para todas: {estado_defecto}")
+
+    stats = {"publicados": 0, "borradores": 0, "errores": 0}
+    results = []
+
+    for idx, noticia in enumerate(a_procesar, start=1):
+        print(f"\n{'─' * 50}")
+        print(f"  📰 [{idx}/{len(a_procesar)}] {noticia.get('titulo', '(sin título)')[:60]}")
+
+        # Heredar defaults globales si el item no los define
+        item = {
+            "tono_ia": tono_global,
+            "generar_excerpt": generar_excerpt_global,
+            "generar_social": generar_social_global,
+            **noticia,  # el item individual sobreescribe los defaults
+        }
+
+        # Calcular estado WP para esta posición
+        # Si el item trae "estado" explícito → prevalece.
+        # Si no → lógica de auto_publish_first / estado_defecto.
+        item_status_override = item.get("estado")  # puede ser None
+        wp_status = _resolve_wp_status(
+            position=idx,
+            status_override=item_status_override,
+            auto_publish_first=auto_pub_first,
+            default_status=estado_defecto,
+        )
+        # Inyectar el status calculado para que publicar_noticia lo use directamente
+        item["estado"] = wp_status
+
+        result = publicar_noticia(item, _position=idx)
+        result["titulo"] = noticia.get("titulo", "")
+        result["posicion"] = idx
+        results.append(result)
+
+        if result["success"]:
+            if result.get("wp_status") == "publish":
+                stats["publicados"] += 1
+            else:
+                stats["borradores"] += 1
+        else:
+            stats["errores"] += 1
+
+        # Pequeña pausa entre items para no saturar la API de Gemini
+        if idx < len(a_procesar):
+            time.sleep(1)
+
+    all_ok = stats["errores"] == 0
+    print(f"\n{'═' * 50}")
+    print(f"📊 LOTE COMPLETADO: {stats['publicados']} publicadas | {stats['borradores']} borradores | {stats['errores']} errores")
+
+    return {
+        "success": all_ok,
+        "total_recibidas": total,
+        "total_procesadas": len(a_procesar),
+        "publicados": stats["publicados"],
+        "borradores": stats["borradores"],
+        "errores": stats["errores"],
+        "items": results,
+        "message": (
+            f"✅ Lote procesado: {stats['publicados']} publicadas, "
+            f"{stats['borradores']} borradores, {stats['errores']} errores"
+        ),
+    }
+
+
+def publicar_evento(payload: dict, _position: int = 1) -> dict:
     """
     Crea o actualiza un evento en The Events Calendar.
 
@@ -451,6 +622,7 @@ def publicar_evento(payload: dict) -> dict:
       - imagen_url (str)
       - generar_excerpt (bool)
       - generar_social (bool)
+      - estado (str): publish | draft  (si no se especifica: DEFAULT_WP_STATUS)
       - wp_event_id (int): Si se proporciona, actualiza en lugar de crear
     """
     titulo = payload.get("titulo", "").strip()
@@ -460,7 +632,6 @@ def publicar_evento(payload: dict) -> dict:
     if not fecha_inicio:
         return {"success": False, "message": "❌ 'fecha_inicio' es obligatorio (formato: YYYY-MM-DD HH:MM:SS)"}
 
-    # Fecha fin por defecto
     fecha_fin = payload.get("fecha_fin")
     if not fecha_fin:
         fecha_fin = fecha_inicio.split(" ")[0] + " 23:59:00"
@@ -475,7 +646,7 @@ def publicar_evento(payload: dict) -> dict:
     fecha_display = fecha_inicio.split(" ")[0]
     ai_content = {}
 
-    # 1. Generar descripción con IA
+    # 1. Descripción
     if payload.get("descripcion_manual"):
         desc_html = payload["descripcion_manual"]
         print("  📝 Usando descripción manual.")
@@ -498,7 +669,7 @@ def publicar_evento(payload: dict) -> dict:
         social_copy = _generar_texto_evento("social", titulo, fecha_display, sala_nombre, precio, tono, borrador)
         ai_content["social_copy"] = social_copy
 
-    # 4. Sala (venue)
+    # 4. Sala
     venue_id = None
     if sala_nombre:
         print(f"  🏢 Buscando/creando sala: {sala_nombre}")
@@ -524,7 +695,16 @@ def publicar_evento(payload: dict) -> dict:
         print(f"  📷 Subiendo imagen: {payload['imagen_url']}")
         img_id = _upload_image_from_url(payload["imagen_url"])
 
-    # 8. Payload TEC
+    # 8. Resolver estado WP
+    wp_status = _resolve_wp_status(
+        position=_position,
+        status_override=payload.get("estado"),
+        auto_publish_first=AUTO_PUBLISH_FIRST,
+        default_status=DEFAULT_WP_STATUS,
+    )
+    print(f"  📋 Estado WP: {wp_status}")
+
+    # 9. Payload TEC
     tec_payload = {
         "title": titulo,
         "description": desc_html,
@@ -534,14 +714,14 @@ def publicar_evento(payload: dict) -> dict:
         "all_day": payload.get("all_day", False),
         "cost": precio,
         "website": _clean_url(payload.get("url_entradas", "")) or "",
-        "status": "publish",
+        "status": wp_status,
         "show_map": "true",
         "show_map_link": "true",
     }
     if venue_id:
         tec_payload["venue"] = venue_id
 
-    # 9. Publicar en TEC
+    # 10. Publicar en TEC
     event_id = payload.get("wp_event_id")
     try:
         if event_id:
@@ -559,17 +739,15 @@ def publicar_evento(payload: dict) -> dict:
             data = res.json()
             event_id = data.get("id")
             url = data.get("url") or data.get("link")
-
-            # Post-proceso: imagen y taxonomías
             _attach_media_to_event(event_id, img_id)
             _force_taxonomies_update(event_id, final_cats, final_tag_ids)
-
             print(f"  ✅ Evento {action}: ID={event_id}")
             return {
                 "success": True,
                 "id": event_id,
                 "url": url,
-                "message": f"✅ Evento {action} correctamente",
+                "wp_status": wp_status,
+                "message": f"✅ Evento {action} como {wp_status}",
                 "ai_content": ai_content,
             }
         else:
@@ -581,7 +759,7 @@ def publicar_evento(payload: dict) -> dict:
         return {"success": False, "message": f"❌ Excepción: {e}"}
 
 
-def publicar_grupo(payload: dict) -> dict:
+def publicar_grupo(payload: dict, _position: int = 1) -> dict:
     """
     Crea o actualiza un grupo (Custom Post Type) en WordPress.
 
@@ -591,19 +769,20 @@ def publicar_grupo(payload: dict) -> dict:
 
     Campos opcionales:
       - provincia (str): default "Córdoba"
-      - estilos (list[str]): Nombres de estilos, p.ej. ["Rock", "Metal"]
+      - estilos (list[str])
       - tipo_propuesta (str): "original" | "tributo"
       - estado_grupo (str): "activo" | "inactivo"
-      - bio_apuntes (str): Info para que la IA genere la biografía
-      - bio_manual (str): HTML de biografía (si no se usa IA)
+      - bio_apuntes (str)
+      - bio_manual (str)
+      - formacion_actual (str)
+      - antiguos_miembros (str)
       - url_facebook, url_instagram, url_spotify, url_youtube, url_web (str)
-      - telefono (str)
-      - email (str)
-      - mostrar_telefono (bool)
-      - mostrar_email (bool)
+      - telefono (str), email (str)
+      - mostrar_telefono (bool), mostrar_email (bool)
       - imagen_url (str)
       - tono_ia (str)
       - instrucciones_custom (str)
+      - estado (str): publish | draft  (si no se especifica: DEFAULT_WP_STATUS)
       - wp_group_id (int): Si se proporciona, actualiza en lugar de crear
     """
     nombre = payload.get("nombre", "").strip()
@@ -620,7 +799,7 @@ def publicar_grupo(payload: dict) -> dict:
     propuesta = payload.get("tipo_propuesta", "original")
     ai_content = {}
 
-    # 1. Generar bio con IA
+    # 1. Bio
     if payload.get("bio_manual"):
         bio_html = payload["bio_manual"]
         print("  📝 Usando biografía manual.")
@@ -633,7 +812,7 @@ def publicar_grupo(payload: dict) -> dict:
         ai_content["bio"] = bio_html
         print("  ✅ Biografía generada.")
 
-    # 2. Resolver IDs de estilos musicales desde la taxonomía WP
+    # 2. Estilos
     estilo_ids = []
     if estilos_nombres:
         print("  🎸 Resolviendo IDs de estilos musicales...")
@@ -643,7 +822,7 @@ def publicar_grupo(payload: dict) -> dict:
             if sid:
                 estilo_ids.append(sid)
 
-    # 3. Etiqueta del grupo (el nombre del grupo como tag)
+    # 3. Tag del grupo
     tag_id = _ensure_tag_exists(nombre)
     final_tags = [tag_id] if tag_id else []
 
@@ -653,10 +832,19 @@ def publicar_grupo(payload: dict) -> dict:
         print(f"  📷 Subiendo imagen: {payload['imagen_url']}")
         img_id = _upload_image_from_url(payload["imagen_url"])
 
-    # 5. Payload WordPress
+    # 5. Resolver estado WP
+    wp_status = _resolve_wp_status(
+        position=_position,
+        status_override=payload.get("estado"),
+        auto_publish_first=AUTO_PUBLISH_FIRST,
+        default_status=DEFAULT_WP_STATUS,
+    )
+    print(f"  📋 Estado WP: {wp_status}")
+
+    # 6. Payload WordPress
     wp_payload = {
         "title": nombre,
-        "status": "publish",
+        "status": wp_status,
         "estilo": estilo_ids,
         "tags": final_tags,
         "acf": {
@@ -681,7 +869,7 @@ def publicar_grupo(payload: dict) -> dict:
     if img_id:
         wp_payload["featured_media"] = int(img_id)
 
-    # 6. Publicar
+    # 7. Publicar
     group_id = payload.get("wp_group_id")
     headers = {"Content-Type": "application/json"}
     try:
@@ -705,7 +893,8 @@ def publicar_grupo(payload: dict) -> dict:
                 "success": True,
                 "id": group_id,
                 "url": url,
-                "message": f"✅ Grupo {action} correctamente",
+                "wp_status": wp_status,
+                "message": f"✅ Grupo {action} como {wp_status}",
                 "ai_content": ai_content,
             }
         else:
@@ -739,7 +928,6 @@ def publicar_sala(payload: dict) -> dict:
     if not nombre:
         return {"success": False, "message": "❌ 'nombre' es obligatorio"}
 
-    # Imagen
     img_id = None
     if payload.get("imagen_url"):
         print(f"  📷 Subiendo imagen: {payload['imagen_url']}")
@@ -805,7 +993,7 @@ def health_check() -> dict:
     except Exception as e:
         results["wordpress"] = f"❌ Error: {e}"
 
-    # Test TEC (The Events Calendar)
+    # Test TEC
     try:
         res = requests.get(f"{WP_URL}/tribe/events/v1/events?per_page=1", auth=AUTH, headers=HEADERS_GET, timeout=10)
         results["tribe_events_calendar"] = "✅ OK" if res.status_code == 200 else f"❌ HTTP {res.status_code}"

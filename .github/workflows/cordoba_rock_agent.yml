@@ -1,13 +1,14 @@
 name: 🤖 Córdoba Rock Agent
 
 # =====================================================
-# TRIGGER 1: Llamada desde otro workflow del mismo repo
+# TRIGGER 1: workflow_call — llamada desde otro workflow
+# (el agente orquestador finaliza y dispara este)
 # =====================================================
 on:
   workflow_call:
     inputs:
       action:
-        description: "Acción: noticia | evento | grupo | sala | health"
+        description: "Acción: noticia | lote_noticias | evento | grupo | sala | health"
         required: true
         type: string
       payload:
@@ -15,6 +16,22 @@ on:
         required: false
         type: string
         default: "{}"
+      # ── Parámetros de modo prueba ──────────────────
+      limite:
+        description: "Número de items a procesar. -1 = todos. 0 = usar env."
+        required: false
+        type: number
+        default: 0
+      estado_defecto:
+        description: "Estado WP: draft (borrador, requiere revisión) | publish (publicar directo)"
+        required: false
+        type: string
+        default: "draft"
+      auto_publish_first:
+        description: "Auto-publicar los primeros N items; el resto como borrador. 0 = todos usan estado_defecto."
+        required: false
+        type: number
+        default: 0
     secrets:
       WP_URL:
         required: true
@@ -32,8 +49,14 @@ on:
         description: "true si la operación fue exitosa"
         value: ${{ jobs.run-agent.outputs.success }}
       post_url:
-        description: "URL del post/evento creado en WordPress"
+        description: "URL del post/evento creado en WordPress (solo para acciones individuales)"
         value: ${{ jobs.run-agent.outputs.post_url }}
+      publicados:
+        description: "Número de items publicados directamente (para lote_noticias)"
+        value: ${{ jobs.run-agent.outputs.publicados }}
+      borradores:
+        description: "Número de items guardados como borrador (para lote_noticias)"
+        value: ${{ jobs.run-agent.outputs.borradores }}
 
   # =====================================================
   # TRIGGER 2: Disparo manual desde la UI de GitHub
@@ -47,6 +70,7 @@ on:
         options:
           - health
           - noticia
+          - lote_noticias
           - evento
           - grupo
           - sala
@@ -54,10 +78,22 @@ on:
         description: "JSON con los datos de entrada (ver AGENT_API.md)"
         required: false
         default: "{}"
+      limite:
+        description: "Límite de items (-1 = todos, N = primeros N)"
+        required: false
+        default: "-1"
+      estado_defecto:
+        description: "Estado por defecto: draft | publish"
+        required: false
+        default: "draft"
+      auto_publish_first:
+        description: "Auto-publicar primeros N items (0 = desactivado)"
+        required: false
+        default: "0"
 
   # =====================================================
-  # TRIGGER 3: Disparo vía repository_dispatch
-  # (desde un agente externo con token de acceso)
+  # TRIGGER 3: repository_dispatch
+  # (desde agente externo con GitHub token)
   # =====================================================
   repository_dispatch:
     types:
@@ -68,51 +104,61 @@ on:
 # =====================================================
 jobs:
   run-agent:
-    name: "🎸 Ejecutar Agente (${{ inputs.action || github.event.client_payload.action }})"
+    name: "🎸 ${{ inputs.action || github.event.client_payload.action }} | límite=${{ inputs.limite || github.event.client_payload.limite || '-1' }} | estado=${{ inputs.estado_defecto || github.event.client_payload.estado_defecto || 'draft' }}"
     runs-on: ubuntu-latest
 
     outputs:
-      result:  ${{ steps.agent.outputs.result }}
-      success: ${{ steps.agent.outputs.success }}
-      post_url: ${{ steps.agent.outputs.post_url }}
+      result:      ${{ steps.agent.outputs.result }}
+      success:     ${{ steps.agent.outputs.success }}
+      post_url:    ${{ steps.agent.outputs.post_url }}
+      publicados:  ${{ steps.agent.outputs.publicados }}
+      borradores:  ${{ steps.agent.outputs.borradores }}
 
     steps:
-      # 1. Checkout del código
+      # 1. Checkout
       - name: "📥 Checkout código"
         uses: actions/checkout@v4
 
-      # 2. Configurar Python
+      # 2. Python
       - name: "🐍 Configurar Python 3.11"
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
           cache: "pip"
 
-      # 3. Instalar dependencias
+      # 3. Dependencias
       - name: "📦 Instalar dependencias"
         run: pip install -r requirements.txt
 
-      # 4. Determinar acción y payload
-      # Soporta los 3 tipos de trigger: workflow_call, workflow_dispatch y repository_dispatch
+      # 4. Preparar inputs — soporta los 3 triggers
       - name: "🔧 Preparar inputs"
         id: prepare
         run: |
-          # workflow_call y workflow_dispatch usan inputs.*
-          # repository_dispatch usa github.event.client_payload.*
+          # Extraer valores según el tipo de trigger
           ACTION="${{ inputs.action || github.event.client_payload.action }}"
           PAYLOAD='${{ inputs.payload || toJson(github.event.client_payload.payload) }}'
-          
-          # Si el payload está vacío o es null, usar {}
+          LIMITE="${{ inputs.limite || github.event.client_payload.limite || '-1' }}"
+          ESTADO="${{ inputs.estado_defecto || github.event.client_payload.estado_defecto || 'draft' }}"
+          AUTO_PUB="${{ inputs.auto_publish_first || github.event.client_payload.auto_publish_first || '0' }}"
+
+          # Sanear payload vacío
           if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
             PAYLOAD="{}"
           fi
-          
-          echo "action=$ACTION" >> $GITHUB_OUTPUT
-          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
-          echo "📋 Acción: $ACTION"
-          echo "📋 Payload (preview): ${PAYLOAD:0:200}..."
 
-      # 5. Health check previo (solo si la acción no es health)
+          echo "action=$ACTION"           >> $GITHUB_OUTPUT
+          echo "payload=$PAYLOAD"         >> $GITHUB_OUTPUT
+          echo "limite=$LIMITE"           >> $GITHUB_OUTPUT
+          echo "estado=$ESTADO"           >> $GITHUB_OUTPUT
+          echo "auto_publish=$AUTO_PUB"   >> $GITHUB_OUTPUT
+
+          echo "📋 Acción:          $ACTION"
+          echo "📋 Límite:          $LIMITE"
+          echo "📋 Estado defecto:  $ESTADO"
+          echo "📋 Auto-publish:    $AUTO_PUB"
+          echo "📋 Payload preview: ${PAYLOAD:0:200}..."
+
+      # 5. Health check previo
       - name: "🏥 Health check"
         if: steps.prepare.outputs.action != 'health'
         env:
@@ -120,9 +166,7 @@ jobs:
           WP_USER: ${{ secrets.WP_USER }}
           WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        run: |
-          echo "Verificando conectividad con WordPress y Gemini..."
-          python run_agent.py --action health
+        run: python run_agent.py --action health
         continue-on-error: true
 
       # 6. Ejecutar el agente
@@ -133,31 +177,48 @@ jobs:
           WP_USER: ${{ secrets.WP_USER }}
           WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+          GEMINI_MODEL: "gemini-2.0-flash"
+          # Variables de control leídas por agent_config.py como fallback
+          DEFAULT_WP_STATUS: ${{ steps.prepare.outputs.estado }}
+          AUTO_PUBLISH_FIRST: ${{ steps.prepare.outputs.auto_publish }}
+          PUBLISH_LIMIT: ${{ steps.prepare.outputs.limite }}
         run: |
           ACTION="${{ steps.prepare.outputs.action }}"
-          PAYLOAD='${{ steps.prepare.outputs.payload }}'
-          
+          LIMITE="${{ steps.prepare.outputs.limite }}"
+          ESTADO="${{ steps.prepare.outputs.estado }}"
+          AUTO_PUB="${{ steps.prepare.outputs.auto_publish }}"
+
           # Guardar payload en fichero para evitar problemas con caracteres especiales
-          echo "$PAYLOAD" > input_payload.json
-          
-          echo "▶️  Ejecutando: python run_agent.py --action $ACTION --input-file input_payload.json"
-          python run_agent.py --action "$ACTION" --input-file input_payload.json
-          
-          # Leer resultado y exportar outputs
+          echo '${{ steps.prepare.outputs.payload }}' > input_payload.json
+
+          echo "▶️  Ejecutando agente..."
+          python run_agent.py \
+            --action "$ACTION" \
+            --input-file input_payload.json \
+            --limite "$LIMITE" \
+            --estado-defecto "$ESTADO" \
+            --auto-publish-first "$AUTO_PUB"
+
+          # Exportar outputs desde el resultado JSON
           RESULT=$(cat agent_result.json)
           SUCCESS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('success',False)).lower())")
           POST_URL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url','') or '')")
-          
-          echo "result=$RESULT" >> $GITHUB_OUTPUT
-          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
-          echo "post_url=$POST_URL" >> $GITHUB_OUTPUT
-          
-          echo ""
-          echo "✅ Success: $SUCCESS"
-          echo "🔗 URL: $POST_URL"
+          PUBLICADOS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('publicados',0))")
+          BORRADORES=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('borradores',0))")
 
-      # 7. Subir artefacto con el resultado (para debugging)
+          echo "result=$RESULT"        >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS"      >> $GITHUB_OUTPUT
+          echo "post_url=$POST_URL"    >> $GITHUB_OUTPUT
+          echo "publicados=$PUBLICADOS"  >> $GITHUB_OUTPUT
+          echo "borradores=$BORRADORES"  >> $GITHUB_OUTPUT
+
+          echo ""
+          echo "✅ Success:    $SUCCESS"
+          echo "📢 Publicados: $PUBLICADOS"
+          echo "📝 Borradores: $BORRADORES"
+          echo "🔗 URL:        $POST_URL"
+
+      # 7. Artefactos para debugging
       - name: "📤 Subir resultado como artefacto"
         if: always()
         uses: actions/upload-artifact@v4
@@ -168,7 +229,7 @@ jobs:
             input_payload.json
           retention-days: 7
 
-      # 8. Resumen en el job summary de GitHub
+      # 8. Resumen en GitHub
       - name: "📊 Resumen"
         if: always()
         run: |
@@ -176,7 +237,9 @@ jobs:
           SUCCESS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('success',False)).lower())" 2>/dev/null || echo "false")
           MESSAGE=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message',''))" 2>/dev/null || echo "")
           URL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url','') or '')" 2>/dev/null || echo "")
-          
+          PUBLICADOS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('publicados',''))" 2>/dev/null || echo "")
+          BORRADORES=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('borradores',''))" 2>/dev/null || echo "")
+
           echo "## 🎸 Córdoba Rock Agent — Resultado" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
           if [ "$SUCCESS" = "true" ]; then
@@ -185,12 +248,23 @@ jobs:
             echo "**Estado:** ❌ Error" >> $GITHUB_STEP_SUMMARY
           fi
           echo "**Acción:** ${{ steps.prepare.outputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Estado WP defecto:** ${{ steps.prepare.outputs.estado }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Límite:** ${{ steps.prepare.outputs.limite }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Auto-publish primeros:** ${{ steps.prepare.outputs.auto_publish }}" >> $GITHUB_STEP_SUMMARY
           echo "**Mensaje:** $MESSAGE" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$PUBLICADOS" ]; then
+            echo "**📢 Publicados:** $PUBLICADOS" >> $GITHUB_STEP_SUMMARY
+          fi
+          if [ -n "$BORRADORES" ]; then
+            echo "**📝 Borradores (pendientes revisión):** $BORRADORES" >> $GITHUB_STEP_SUMMARY
+          fi
           if [ -n "$URL" ]; then
-            echo "**URL publicada:** $URL" >> $GITHUB_STEP_SUMMARY
+            echo "**🔗 URL publicada:** $URL" >> $GITHUB_STEP_SUMMARY
           fi
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Resultado completo:**" >> $GITHUB_STEP_SUMMARY
+          echo "<details><summary>Resultado completo JSON</summary>" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
           echo '```json' >> $GITHUB_STEP_SUMMARY
           echo "$RESULT" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "</details>" >> $GITHUB_STEP_SUMMARY

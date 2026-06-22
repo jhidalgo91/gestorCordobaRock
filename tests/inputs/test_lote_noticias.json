@@ -1,0 +1,25 @@
+{
+  "limite": 2,
+  "estado_defecto": "draft",
+  "auto_publish_first": 0,
+  "tono_ia": "rockero",
+  "generar_excerpt": true,
+  "generar_social": false,
+  "noticias": [
+    {
+      "titulo": "Los Reyes del Metal vuelven a Córdoba con su gira 'Fuego y Acero'",
+      "apuntes": "Concierto el 15 de enero en la Sala Fanatic. La banda lleva 15 años en activo. Entradas a 18 euros. Puertas a las 20:30h, concierto a las 21:30h. Teloneros: Distrito Sur.",
+      "categoria_ids": []
+    },
+    {
+      "titulo": "Nuevo disco de Distrito Sur: 'Entre el Ruido y el Silencio'",
+      "apuntes": "La banda cordobesa lanza su tercer álbum el 20 de febrero. 10 temas de rock alternativo. Disponible en Spotify y vinilo. Presentación en la Sala X el 1 de marzo.",
+      "categoria_ids": []
+    },
+    {
+      "titulo": "Festival Córdoba Rocks 2025: Cartel Completo",
+      "apuntes": "El festival vuelve en julio. 3 días, 2 escenarios, más de 20 bandas. Entradas anticipadas a 45 euros. Destacan: Los Reyes del Metal, Distrito Sur, y 3 bandas nacionales por confirmar.",
+      "categoria_ids": []
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+# ═══════════════════════════════════════════════════════════════════════
+# SNIPPET: Cómo el Agente 1 (CordobaRock) dispara el Agente 2 (gestor)
+# ═══════════════════════════════════════════════════════════════════════
+#
+# Añade esto al workflow del Agente 1 (en el repo CordobaRock):
+#
+# REQUISITOS en el repo del Agente 1:
+#   - Tener acceso al repositorio gestor-cordoba-rock (mismo org o fork)
+#   - Los secrets WP_URL, WP_USER, WP_APP_PASSWORD, GEMINI_API_KEY
+#     definidos en el repo del Agente 1 (se heredan con `secrets: inherit`)
+#
+# ═══════════════════════════════════════════════════════════════════════
+
+# ── OPCIÓN A: workflow_call (recomendada si ambos repos están en la misma org)
+# ─────────────────────────────────────────────────────────────────────────────
+#
+# jobs:
+#
+#   # ... (tus jobs del Agente 1 aquí) ...
+#   generar-contenido:
+#     ...
+#     outputs:
+#       noticias_json: ${{ steps.generar.outputs.noticias_json }}
+#
+#   # Al finalizar el Agente 1, dispara el gestor:
+#   publicar-en-wordpress:
+#     needs: generar-contenido          # espera a que el Agente 1 acabe
+#     uses: TU_ORG/gestor-cordoba-rock/.github/workflows/cordoba_rock_agent.yml@main
+#     with:
+#       action: lote_noticias
+#       payload: ${{ needs.generar-contenido.outputs.noticias_json }}
+#
+#       # ── MODO PRUEBA: procesar solo las 2 primeras ──
+#       limite: 2
+#
+#       # ── CONTROL DE PUBLICACIÓN ──
+#       # Todas como borrador (revisión manual antes de publicar):
+#       estado_defecto: draft
+#       auto_publish_first: 0
+#
+#       # -- O bien: auto-publicar la primera, el resto como borrador:
+#       # estado_defecto: draft
+#       # auto_publish_first: 1
+#
+#       # -- O bien: publicar todo directamente (CUIDADO en producción):
+#       # estado_defecto: publish
+#       # auto_publish_first: 0
+#
+#     secrets: inherit                  # hereda WP_URL, WP_USER, etc.
+#
+#   # Usar los resultados del gestor en pasos posteriores
+#   notificar:
+#     needs: publicar-en-wordpress
+#     runs-on: ubuntu-latest
+#     steps:
+#       - name: "Ver resultado"
+#         run: |
+#           echo "Éxito:      ${{ needs.publicar-en-wordpress.outputs.success }}"
+#           echo "Publicados: ${{ needs.publicar-en-wordpress.outputs.publicados }}"
+#           echo "Borradores: ${{ needs.publicar-en-wordpress.outputs.borradores }}"
+#           echo "URL:        ${{ needs.publicar-en-wordpress.outputs.post_url }}"
+
+
+# ── OPCIÓN B: repository_dispatch (repos distintos / sin acceso a workflow_call)
+# ─────────────────────────────────────────────────────────────────────────────
+# Útil si el Agente 1 está en un repositorio diferente sin acceso directo.
+#
+#   - name: "Disparar Agente Gestor Córdoba Rock"
+#     run: |
+#       NOTICIAS_JSON='${{ steps.generar.outputs.noticias_json }}'
+#
+#       curl -s -X POST \
+#         -H "Authorization: Bearer ${{ secrets.GESTOR_REPO_TOKEN }}" \
+#         -H "Content-Type: application/json" \
+#         https://api.github.com/repos/TU_ORG/gestor-cordoba-rock/dispatches \
+#         -d "{
+#           \"event_type\": \"cordoba-rock-agent\",
+#           \"client_payload\": {
+#             \"action\": \"lote_noticias\",
+#             \"limite\": 2,
+#             \"estado_defecto\": \"draft\",
+#             \"auto_publish_first\": 0,
+#             \"payload\": $NOTICIAS_JSON
+#           }
+#         }"
+#
+# NOTA: GESTOR_REPO_TOKEN debe ser un PAT con permisos `repo` o `actions` en gestor-cordoba-rock.
+
+
+# ── FORMATO del payload que genera el Agente 1 ────────────────────────────────
+# El Agente 1 debe construir un JSON con esta estructura:
+#
+# {
+#   "noticias": [
+#     {
+#       "titulo": "Título de la noticia",
+#       "apuntes": "Información base que la IA usará para redactar"
+#     },
+#     {
+#       "titulo": "Segunda noticia",
+#       "apuntes": "Más información..."
+#     }
+#   ]
+# }
+#
+# Los campos limite, estado_defecto y auto_publish_first se pasan
+# como inputs del workflow (no dentro del payload).
