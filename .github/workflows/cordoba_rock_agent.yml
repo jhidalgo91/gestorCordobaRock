@@ -177,7 +177,7 @@ jobs:
           WP_USER: ${{ secrets.WP_USER }}
           WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: "gemini-2.0-flash"
+          GEMINI_MODEL: "gemini-3.5-flash"
           # Variables de control leídas por agent_config.py como fallback
           DEFAULT_WP_STATUS: ${{ steps.prepare.outputs.estado }}
           AUTO_PUBLISH_FIRST: ${{ steps.prepare.outputs.auto_publish }}
