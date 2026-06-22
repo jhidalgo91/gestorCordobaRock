@@ -32,7 +32,8 @@ import time
 import html
 import re
 import requests
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 from agent_config import (
     WP_URL, AUTH, HEADERS_GET,
@@ -42,8 +43,8 @@ from agent_config import (
     PUBLISH_LIMIT, DEFAULT_WP_STATUS, AUTO_PUBLISH_FIRST,
 )
 
-# Inicializar cliente IA
-genai.configure(api_key=GEMINI_API_KEY)
+# Inicializar cliente IA (nuevo SDK google-genai)
+_ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ==========================================
@@ -59,10 +60,13 @@ def _get_tone_instructions(tono: str, instrucciones_custom: str = "") -> str:
 
 def _run_ai_query(prompt: str, max_retries: int = 2) -> str:
     """Ejecuta una consulta a Gemini con reintentos en caso de rate limit."""
-    model = genai.GenerativeModel(GEMINI_MODEL)
     for attempt in range(max_retries):
         try:
-            return model.generate_content(prompt).text
+            response = _ai_client.models.generate_content(
+                model=GEMINI_MODEL,
+                contents=prompt,
+            )
+            return response.text
         except Exception as e:
             if "429" in str(e) and attempt < max_retries - 1:
                 print(f"  ⚠️  Rate limit (429), esperando 10s... (intento {attempt + 1})")
@@ -1002,8 +1006,10 @@ def health_check() -> dict:
 
     # Test Gemini AI
     try:
-        model = genai.GenerativeModel(GEMINI_MODEL)
-        model.generate_content("Di 'OK' en una sola palabra.")
+        _ai_client.models.generate_content(
+            model=GEMINI_MODEL,
+            contents="Di 'OK' en una sola palabra.",
+        )
         results["gemini_ai"] = "✅ OK"
     except Exception as e:
         results["gemini_ai"] = f"❌ Error: {e}"
