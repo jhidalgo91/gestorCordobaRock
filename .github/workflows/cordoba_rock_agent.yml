@@ -1,0 +1,196 @@
+name: 🤖 Córdoba Rock Agent
+
+# =====================================================
+# TRIGGER 1: Llamada desde otro workflow del mismo repo
+# =====================================================
+on:
+  workflow_call:
+    inputs:
+      action:
+        description: "Acción: noticia | evento | grupo | sala | health"
+        required: true
+        type: string
+      payload:
+        description: "JSON string con los datos de entrada"
+        required: false
+        type: string
+        default: "{}"
+    secrets:
+      WP_URL:
+        required: true
+      WP_USER:
+        required: true
+      WP_APP_PASSWORD:
+        required: true
+      GEMINI_API_KEY:
+        required: true
+    outputs:
+      result:
+        description: "JSON resultado del agente"
+        value: ${{ jobs.run-agent.outputs.result }}
+      success:
+        description: "true si la operación fue exitosa"
+        value: ${{ jobs.run-agent.outputs.success }}
+      post_url:
+        description: "URL del post/evento creado en WordPress"
+        value: ${{ jobs.run-agent.outputs.post_url }}
+
+  # =====================================================
+  # TRIGGER 2: Disparo manual desde la UI de GitHub
+  # =====================================================
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "Acción a ejecutar"
+        required: true
+        type: choice
+        options:
+          - health
+          - noticia
+          - evento
+          - grupo
+          - sala
+      payload:
+        description: "JSON con los datos de entrada (ver AGENT_API.md)"
+        required: false
+        default: "{}"
+
+  # =====================================================
+  # TRIGGER 3: Disparo vía repository_dispatch
+  # (desde un agente externo con token de acceso)
+  # =====================================================
+  repository_dispatch:
+    types:
+      - cordoba-rock-agent
+
+# =====================================================
+# JOBS
+# =====================================================
+jobs:
+  run-agent:
+    name: "🎸 Ejecutar Agente (${{ inputs.action || github.event.client_payload.action }})"
+    runs-on: ubuntu-latest
+
+    outputs:
+      result:  ${{ steps.agent.outputs.result }}
+      success: ${{ steps.agent.outputs.success }}
+      post_url: ${{ steps.agent.outputs.post_url }}
+
+    steps:
+      # 1. Checkout del código
+      - name: "📥 Checkout código"
+        uses: actions/checkout@v4
+
+      # 2. Configurar Python
+      - name: "🐍 Configurar Python 3.11"
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      # 3. Instalar dependencias
+      - name: "📦 Instalar dependencias"
+        run: pip install -r requirements.txt
+
+      # 4. Determinar acción y payload
+      # Soporta los 3 tipos de trigger: workflow_call, workflow_dispatch y repository_dispatch
+      - name: "🔧 Preparar inputs"
+        id: prepare
+        run: |
+          # workflow_call y workflow_dispatch usan inputs.*
+          # repository_dispatch usa github.event.client_payload.*
+          ACTION="${{ inputs.action || github.event.client_payload.action }}"
+          PAYLOAD='${{ inputs.payload || toJson(github.event.client_payload.payload) }}'
+          
+          # Si el payload está vacío o es null, usar {}
+          if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
+            PAYLOAD="{}"
+          fi
+          
+          echo "action=$ACTION" >> $GITHUB_OUTPUT
+          echo "payload=$PAYLOAD" >> $GITHUB_OUTPUT
+          echo "📋 Acción: $ACTION"
+          echo "📋 Payload (preview): ${PAYLOAD:0:200}..."
+
+      # 5. Health check previo (solo si la acción no es health)
+      - name: "🏥 Health check"
+        if: steps.prepare.outputs.action != 'health'
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: |
+          echo "Verificando conectividad con WordPress y Gemini..."
+          python run_agent.py --action health
+        continue-on-error: true
+
+      # 6. Ejecutar el agente
+      - name: "🚀 Ejecutar agente"
+        id: agent
+        env:
+          WP_URL: ${{ secrets.WP_URL }}
+          WP_USER: ${{ secrets.WP_USER }}
+          WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+        run: |
+          ACTION="${{ steps.prepare.outputs.action }}"
+          PAYLOAD='${{ steps.prepare.outputs.payload }}'
+          
+          # Guardar payload en fichero para evitar problemas con caracteres especiales
+          echo "$PAYLOAD" > input_payload.json
+          
+          echo "▶️  Ejecutando: python run_agent.py --action $ACTION --input-file input_payload.json"
+          python run_agent.py --action "$ACTION" --input-file input_payload.json
+          
+          # Leer resultado y exportar outputs
+          RESULT=$(cat agent_result.json)
+          SUCCESS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('success',False)).lower())")
+          POST_URL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url','') or '')")
+          
+          echo "result=$RESULT" >> $GITHUB_OUTPUT
+          echo "success=$SUCCESS" >> $GITHUB_OUTPUT
+          echo "post_url=$POST_URL" >> $GITHUB_OUTPUT
+          
+          echo ""
+          echo "✅ Success: $SUCCESS"
+          echo "🔗 URL: $POST_URL"
+
+      # 7. Subir artefacto con el resultado (para debugging)
+      - name: "📤 Subir resultado como artefacto"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agent-result-${{ github.run_id }}
+          path: |
+            agent_result.json
+            input_payload.json
+          retention-days: 7
+
+      # 8. Resumen en el job summary de GitHub
+      - name: "📊 Resumen"
+        if: always()
+        run: |
+          RESULT=$(cat agent_result.json 2>/dev/null || echo '{"success":false,"message":"No result file"}')
+          SUCCESS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('success',False)).lower())" 2>/dev/null || echo "false")
+          MESSAGE=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message',''))" 2>/dev/null || echo "")
+          URL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url','') or '')" 2>/dev/null || echo "")
+          
+          echo "## 🎸 Córdoba Rock Agent — Resultado" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "$SUCCESS" = "true" ]; then
+            echo "**Estado:** ✅ Éxito" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Estado:** ❌ Error" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "**Acción:** ${{ steps.prepare.outputs.action }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Mensaje:** $MESSAGE" >> $GITHUB_STEP_SUMMARY
+          if [ -n "$URL" ]; then
+            echo "**URL publicada:** $URL" >> $GITHUB_STEP_SUMMARY
+          fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Resultado completo:**" >> $GITHUB_STEP_SUMMARY
+          echo '```json' >> $GITHUB_STEP_SUMMARY
+          echo "$RESULT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

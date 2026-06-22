@@ -1,0 +1,21 @@
+{
+  "action": "grupo",
+  "nombre": "Los Reyes del Metal",
+  "ciudad": "Córdoba",
+  "provincia": "Córdoba",
+  "estilos": ["Metal", "Rock"],
+  "tipo_propuesta": "original",
+  "estado_grupo": "activo",
+  "bio_apuntes": "Banda formada en 2010. Influencias: Metallica, Iron Maiden. Tres discos publicados: 'Inicio' (2012), 'Despertar' (2016), 'Fuego y Acero' (2023). Han tocado en festivales como ViñaRock.",
+  "url_facebook": "https://facebook.com/losreyesdelmetal",
+  "url_instagram": "https://instagram.com/losreyesdelmetal",
+  "url_spotify": "",
+  "url_youtube": "",
+  "url_web": "",
+  "telefono": "",
+  "email": "losreyesdelmetal@gmail.com",
+  "mostrar_telefono": false,
+  "mostrar_email": false,
+  "imagen_url": "",
+  "tono_ia": "rockero"
+}

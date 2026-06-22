@@ -1,0 +1,16 @@
+{
+  "action": "evento",
+  "titulo": "Los Reyes del Metal — Sala Fanatic Córdoba",
+  "fecha_inicio": "2025-01-15 21:30:00",
+  "fecha_fin": "2025-01-15 23:59:00",
+  "sala_nombre": "Sala Fanatic",
+  "precio": "18€",
+  "url_entradas": "https://www.entradas.com/evento/ejemplo",
+  "descripcion_apuntes": "La banda regresa a Córdoba tras 3 años. 15 años en activo. Mezcla de thrash y heavy metal clásico. Disco nuevo 'Fuego y Acero'. Teloneros: Distrito Sur.",
+  "categoria_nombres": ["Córdoba"],
+  "etiquetas": ["Metal", "Heavy Metal", "Sala Fanatic", "Córdoba"],
+  "tono_ia": "rockero",
+  "imagen_url": "",
+  "generar_excerpt": true,
+  "generar_social": false
+}
