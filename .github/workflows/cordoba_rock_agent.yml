@@ -182,6 +182,7 @@ jobs:
           DEFAULT_WP_STATUS: ${{ steps.prepare.outputs.estado }}
           AUTO_PUBLISH_FIRST: ${{ steps.prepare.outputs.auto_publish }}
           PUBLISH_LIMIT: ${{ steps.prepare.outputs.limite }}
+          STEP_PAYLOAD: ${{ steps.prepare.outputs.payload }}
         run: |
           ACTION="${{ steps.prepare.outputs.action }}"
           LIMITE="${{ steps.prepare.outputs.limite }}"
@@ -190,13 +191,14 @@ jobs:
 
           # Guardar payload en fichero — usar python para evitar problemas de quoting
           python3 -c "
-import json, sys
-raw = '''${{ steps.prepare.outputs.payload }}'''
+import os, json
+raw = os.environ.get('STEP_PAYLOAD', '{}')
 try:
     data = json.loads(raw)
 except Exception:
     data = {}
-json.dump(data, open('input_payload.json','w'), ensure_ascii=False)
+with open('input_payload.json', 'w', encoding='utf-8') as f:
+    json.dump(data, f, ensure_ascii=False)
 "
 
           echo "▶️  Ejecutando agente..."
