@@ -191,15 +191,15 @@ jobs:
 
           # Guardar payload en fichero — usar python para evitar problemas de quoting
           python3 -c "
-import os, json
-raw = os.environ.get('STEP_PAYLOAD', '{}')
-try:
-    data = json.loads(raw)
-except Exception:
-    data = {}
-with open('input_payload.json', 'w', encoding='utf-8') as f:
-    json.dump(data, f, ensure_ascii=False)
-"
+          import os, json
+          raw = os.environ.get('STEP_PAYLOAD', '{}')
+          try:
+              data = json.loads(raw)
+          except Exception:
+              data = {}
+          with open('input_payload.json', 'w', encoding='utf-8') as f:
+              json.dump(data, f, ensure_ascii=False)
+          "
 
           echo "▶️  Ejecutando agente..."
           python run_agent.py \
