@@ -188,16 +188,8 @@ jobs:
           ESTADO="${{ steps.prepare.outputs.estado }}"
           AUTO_PUB="${{ steps.prepare.outputs.auto_publish }}"
 
-          # Guardar payload en fichero — usar python para evitar problemas de quoting
-          python3 -c "
-import json, sys
-raw = '''${{ steps.prepare.outputs.payload }}'''
-try:
-    data = json.loads(raw)
-except Exception:
-    data = {}
-json.dump(data, open('input_payload.json','w'), ensure_ascii=False)
-"
+          # Guardar payload en fichero para evitar problemas con caracteres especiales
+          echo '${{ steps.prepare.outputs.payload }}' > input_payload.json
 
           echo "▶️  Ejecutando agente..."
           python run_agent.py \
@@ -208,21 +200,13 @@ json.dump(data, open('input_payload.json','w'), ensure_ascii=False)
             --auto-publish-first "$AUTO_PUB"
 
           # Exportar outputs desde el resultado JSON
-          # NOTA: el JSON multi-línea requiere formato heredoc para GITHUB_OUTPUT
           RESULT=$(cat agent_result.json)
           SUCCESS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(str(d.get('success',False)).lower())")
           POST_URL=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('url','') or '')")
           PUBLICADOS=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('publicados',0))")
           BORRADORES=$(echo "$RESULT" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('borradores',0))")
 
-          # Usar formato heredoc para el JSON (evita el error "Invalid format")
-          DELIM="EOF_$(date +%s%N)"
-          {
-            echo "result<<$DELIM"
-            echo "$RESULT"
-            echo "$DELIM"
-          } >> $GITHUB_OUTPUT
-
+          echo "result=$RESULT"        >> $GITHUB_OUTPUT
           echo "success=$SUCCESS"      >> $GITHUB_OUTPUT
           echo "post_url=$POST_URL"    >> $GITHUB_OUTPUT
           echo "publicados=$PUBLICADOS"  >> $GITHUB_OUTPUT
