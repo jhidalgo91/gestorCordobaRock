@@ -20,8 +20,8 @@ on:
       limite:
         description: "Número de items a procesar. -1 = todos. 0 = usar env."
         required: false
-        type: number
-        default: 0
+        type: string
+        default: "0"
       estado_defecto:
         description: "Estado WP: draft (borrador, requiere revisión) | publish (publicar directo)"
         required: false
@@ -30,8 +30,8 @@ on:
       auto_publish_first:
         description: "Auto-publicar los primeros N items; el resto como borrador. 0 = todos usan estado_defecto."
         required: false
-        type: number
-        default: 0
+        type: string
+        default: "0"
     secrets:
       WP_URL:
         required: true
