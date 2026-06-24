@@ -32,6 +32,11 @@ on:
         required: false
         type: string
         default: "0"
+      ai_model:
+        description: "Modelo IA a utilizar (gemini-3.5-flash, gpt-4o-mini, etc)"
+        required: false
+        type: string
+        default: ""
     secrets:
       WP_URL:
         required: true
@@ -89,13 +94,23 @@ on:
         required: false
         default: "-1"
       estado_defecto:
-        description: "Estado por defecto: draft | publish"
+        description: "Estado (draft/publish)"
         required: false
-        default: "draft"
+        type: choice
+        options:
+          - draft
+          - publish
+        default: draft
       auto_publish_first:
-        description: "Auto-publicar primeros N items (0 = desactivado)"
+        description: "Autopublicar primeros N"
         required: false
+        type: string
         default: "0"
+      ai_model:
+        description: "Modelo IA a utilizar"
+        required: false
+        type: string
+        default: ""
       api_delay_seconds:
         description: "Segundos de espera antes de IA (0 para desactivar)"
         required: false
@@ -156,6 +171,7 @@ jobs:
           ESTADO="${{ inputs.estado_defecto || github.event.client_payload.estado_defecto || 'draft' }}"
           AUTO_PUB="${{ inputs.auto_publish_first || github.event.client_payload.auto_publish_first || '0' }}"
           API_DELAY="${{ inputs.api_delay_seconds || github.event.client_payload.api_delay_seconds || vars.API_DELAY_SECONDS || '120' }}"
+          AI_MOD="${{ inputs.ai_model || github.event.client_payload.ai_model || vars.AI_MODEL || 'gemini-3.5-flash' }}"
 
           # Sanear payload vacío
           if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
@@ -164,10 +180,11 @@ jobs:
 
           echo "action=$ACTION"           >> $GITHUB_OUTPUT
           echo "payload=$PAYLOAD"         >> $GITHUB_OUTPUT
-          echo "limite=$LIMITE"           >> $GITHUB_OUTPUT
-          echo "estado=$ESTADO"           >> $GITHUB_OUTPUT
-          echo "auto_publish=$AUTO_PUB"   >> $GITHUB_OUTPUT
-          echo "api_delay=$API_DELAY"      >> $GITHUB_OUTPUT
+          echo "limite=$LIMITE" >> $GITHUB_OUTPUT
+          echo "estado=$ESTADO" >> $GITHUB_OUTPUT
+          echo "auto_publish=$AUTO_PUB" >> $GITHUB_OUTPUT
+          echo "api_delay=$API_DELAY" >> $GITHUB_OUTPUT
+          echo "ai_model=$AI_MOD" >> $GITHUB_OUTPUT
 
           echo "📋 Acción:          $ACTION"
           echo "📋 Límite:          $LIMITE"
@@ -185,6 +202,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_MODEL: ${{ steps.prepare.outputs.ai_model }}
         run: python gestor_repo/run_agent.py --action health
         continue-on-error: true
 
@@ -198,7 +216,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          AI_MODEL: ${{ vars.AI_MODEL || 'gemini-3.5-flash' }}
+          AI_MODEL: ${{ steps.prepare.outputs.ai_model }}
           API_DELAY_SECONDS: ${{ steps.prepare.outputs.api_delay }}
           # Variables de control leídas por agent_config.py como fallback
           DEFAULT_WP_STATUS: ${{ steps.prepare.outputs.estado }}

@@ -1029,15 +1029,12 @@ def health_check() -> dict:
     except Exception as e:
         results["tribe_events_calendar"] = f"❌ Error: {e}"
 
-    # Test Gemini AI
+    # Test AI
     try:
-        _ai_client.models.generate_content(
-            model=GEMINI_MODEL,
-            contents="Di 'OK' en una sola palabra.",
-        )
-        results["gemini_ai"] = "✅ OK"
+        _run_ai_query("Di 'OK' en una sola palabra.")
+        results["ai_api"] = "✅ OK"
     except Exception as e:
-        results["gemini_ai"] = f"❌ Error: {e}"
+        results["ai_api"] = f"❌ Error: {e}"
 
     all_ok = all("✅" in v for v in results.values())
     return {
