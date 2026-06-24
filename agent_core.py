@@ -59,17 +59,17 @@ def _get_tone_instructions(tono: str, instrucciones_custom: str = "") -> str:
     return AI_TONE_INSTRUCTIONS.get(tono, AI_TONE_INSTRUCTIONS[DEFAULT_AI_TONE])
 
 
-def _run_ai_query(prompt: str, max_retries: int = 2) -> str:
+def _run_ai_query(prompt: str, max_retries: int = 2, apply_delay: bool = True) -> str:
     """Ejecuta una consulta a la IA con reintentos y aplica delay."""
     
-    if API_DELAY_SECONDS > 0:
+    if apply_delay and API_DELAY_SECONDS > 0:
         print(f"  ⏳ Esperando {API_DELAY_SECONDS}s para evitar saturación de API...")
         time.sleep(API_DELAY_SECONDS)
 
     for attempt in range(max_retries):
         try:
             if AI_MODEL.startswith("gpt"):
-                client = openai.Client(api_key=OPENAI_API_KEY)
+                client = openai.OpenAI(api_key=OPENAI_API_KEY, timeout=15.0)
                 res = client.chat.completions.create(
                     model=AI_MODEL,
                     messages=[{"role": "user", "content": prompt}],
@@ -77,7 +77,7 @@ def _run_ai_query(prompt: str, max_retries: int = 2) -> str:
                 )
                 return res.choices[0].message.content or ""
             elif AI_MODEL.startswith("claude"):
-                client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+                client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY, timeout=15.0)
                 res = client.messages.create(
                     model=AI_MODEL,
                     max_tokens=2048,
@@ -1031,7 +1031,7 @@ def health_check() -> dict:
 
     # Test AI
     try:
-        _run_ai_query("Di 'OK' en una sola palabra.")
+        _run_ai_query("Di 'OK' en una sola palabra.", apply_delay=False)
         results["ai_api"] = "✅ OK"
     except Exception as e:
         results["ai_api"] = f"❌ Error: {e}"
