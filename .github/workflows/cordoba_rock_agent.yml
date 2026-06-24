@@ -40,7 +40,11 @@ on:
       WP_APP_PASSWORD:
         required: true
       GEMINI_API_KEY:
-        required: true
+        required: false
+      OPENAI_API_KEY:
+        required: false
+      ANTHROPIC_API_KEY:
+        required: false
     outputs:
       result:
         description: "JSON resultado del agente"
@@ -90,6 +94,10 @@ on:
         description: "Auto-publicar primeros N items (0 = desactivado)"
         required: false
         default: "0"
+      api_delay_seconds:
+        description: "Segundos de espera antes de IA (0 para desactivar)"
+        required: false
+        default: "120"
 
   # =====================================================
   # TRIGGER 3: repository_dispatch
@@ -140,6 +148,7 @@ jobs:
           LIMITE="${{ inputs.limite || github.event.client_payload.limite || '-1' }}"
           ESTADO="${{ inputs.estado_defecto || github.event.client_payload.estado_defecto || 'draft' }}"
           AUTO_PUB="${{ inputs.auto_publish_first || github.event.client_payload.auto_publish_first || '0' }}"
+          API_DELAY="${{ inputs.api_delay_seconds || github.event.client_payload.api_delay_seconds || vars.API_DELAY_SECONDS || '120' }}"
 
           # Sanear payload vacío
           if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
@@ -151,6 +160,7 @@ jobs:
           echo "limite=$LIMITE"           >> $GITHUB_OUTPUT
           echo "estado=$ESTADO"           >> $GITHUB_OUTPUT
           echo "auto_publish=$AUTO_PUB"   >> $GITHUB_OUTPUT
+          echo "api_delay=$API_DELAY"      >> $GITHUB_OUTPUT
 
           echo "📋 Acción:          $ACTION"
           echo "📋 Límite:          $LIMITE"
@@ -166,6 +176,8 @@ jobs:
           WP_USER: ${{ secrets.WP_USER }}
           WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: python run_agent.py --action health
         continue-on-error: true
 
@@ -177,7 +189,10 @@ jobs:
           WP_USER: ${{ secrets.WP_USER }}
           WP_APP_PASSWORD: ${{ secrets.WP_APP_PASSWORD }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-          GEMINI_MODEL: "gemini-3.5-flash"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          AI_MODEL: ${{ vars.AI_MODEL || 'gemini-3.5-flash' }}
+          API_DELAY_SECONDS: ${{ steps.prepare.outputs.api_delay }}
           # Variables de control leídas por agent_config.py como fallback
           DEFAULT_WP_STATUS: ${{ steps.prepare.outputs.estado }}
           AUTO_PUBLISH_FIRST: ${{ steps.prepare.outputs.auto_publish }}

@@ -40,7 +40,7 @@ from google.genai import types
 
 from agent_config import (
     WP_URL, AUTH, HEADERS_GET,
-    GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, AI_MODEL,
+    GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, AI_MODEL, API_DELAY_SECONDS,
     DEFAULT_AI_TONE, AI_TONE_INSTRUCTIONS,
     EVENT_CATEGORIES, EVENT_CAT_MAP_INV,
     PUBLISH_LIMIT, DEFAULT_WP_STATUS, AUTO_PUBLISH_FIRST,
@@ -62,8 +62,9 @@ def _get_tone_instructions(tono: str, instrucciones_custom: str = "") -> str:
 def _run_ai_query(prompt: str, max_retries: int = 2) -> str:
     """Ejecuta una consulta a la IA con reintentos y aplica delay."""
     
-    print("  ⏳ Esperando 2 minutos (120s) para evitar saturación de API...")
-    time.sleep(120)
+    if API_DELAY_SECONDS > 0:
+        print(f"  ⏳ Esperando {API_DELAY_SECONDS}s para evitar saturación de API...")
+        time.sleep(API_DELAY_SECONDS)
 
     for attempt in range(max_retries):
         try:
