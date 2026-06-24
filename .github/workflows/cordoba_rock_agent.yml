@@ -99,7 +99,7 @@ on:
       api_delay_seconds:
         description: "Segundos de espera antes de IA (0 para desactivar)"
         required: false
-        default: "120"
+        default: "5"
 
   # =====================================================
   # TRIGGER 3: repository_dispatch
@@ -126,11 +126,12 @@ jobs:
 
     steps:
       # 1. Checkout (explicitly referencing the agent repo so workflow_call works)
-      - name: "📥 Checkout código"
+      - name: "📥 Checkout código del Agente"
         uses: actions/checkout@v4
         with:
           repository: jhidalgo91/gestorCordobaRock
           token: ${{ secrets.GH_PAT || github.token }}
+          path: gestor_repo
 
       # 2. Python
       - name: "🐍 Configurar Python 3.11"
@@ -138,10 +139,11 @@ jobs:
         with:
           python-version: "3.11"
           cache: "pip"
+          cache-dependency-path: gestor_repo/requirements.txt
 
       # 3. Dependencias
       - name: "📦 Instalar dependencias"
-        run: pip install -r requirements.txt
+        run: pip install -r gestor_repo/requirements.txt
 
       # 4. Preparar inputs — soporta los 3 triggers
       - name: "🔧 Preparar inputs"
@@ -183,7 +185,7 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
           OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-        run: python run_agent.py --action health
+        run: python gestor_repo/run_agent.py --action health
         continue-on-error: true
 
       # 6. Ejecutar el agente
@@ -222,7 +224,7 @@ jobs:
           "
 
           echo "▶️  Ejecutando agente..."
-          python run_agent.py \
+          python gestor_repo/run_agent.py \
             --action "$ACTION" \
             --input-file input_payload.json \
             --limite "$LIMITE" \
