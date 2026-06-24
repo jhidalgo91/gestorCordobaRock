@@ -38,7 +38,7 @@ HEADERS_GET = {
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-AI_MODEL = os.environ.get("AI_MODEL", "gemini-3.5-flash")
+AI_MODEL = os.environ.get("AI_MODEL", "gpt-4o-mini")
 API_DELAY_SECONDS = int(os.environ.get("API_DELAY_SECONDS", "120"))
 
 if not (GEMINI_API_KEY or OPENAI_API_KEY or ANTHROPIC_API_KEY):

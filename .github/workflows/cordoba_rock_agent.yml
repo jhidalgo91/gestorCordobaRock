@@ -171,7 +171,7 @@ jobs:
           ESTADO="${{ inputs.estado_defecto || github.event.client_payload.estado_defecto || 'draft' }}"
           AUTO_PUB="${{ inputs.auto_publish_first || github.event.client_payload.auto_publish_first || '0' }}"
           API_DELAY="${{ inputs.api_delay_seconds || github.event.client_payload.api_delay_seconds || vars.API_DELAY_SECONDS || '120' }}"
-          AI_MOD="${{ inputs.ai_model || github.event.client_payload.ai_model || vars.AI_MODEL || 'gemini-3.5-flash' }}"
+          AI_MOD="${{ inputs.ai_model || github.event.client_payload.ai_model || vars.AI_MODEL || 'gpt-4o-mini' }}"
 
           # Sanear payload vacío
           if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
