@@ -86,7 +86,11 @@ Configura en **Settings → Secrets and variables → Actions**:
 | `WP_URL` | URL base de la API REST de WordPress, ej. `https://cordobarock.es/wp-json` | ✅ |
 | `WP_USER` | Nombre de usuario de WordPress | ✅ |
 | `WP_APP_PASSWORD` | Contraseña de Aplicación de WP (no la de login) | ✅ |
-| `GEMINI_API_KEY` | API Key de Google Gemini | ✅ |
+| `GEMINI_API_KEY` | API Key de Google Gemini | Depende (1) |
+| `OPENAI_API_KEY` | API Key de OpenAI | Depende (1) |
+| `ANTHROPIC_API_KEY` | API Key de Anthropic | Depende (1) |
+
+*(1) Es obligatorio configurar **al menos una** de las tres API Keys.*
 
 Variables opcionales (no sensibles, pueden ir como *Variables* en lugar de Secrets):
 

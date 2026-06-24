@@ -141,7 +141,9 @@ WP_USER=admin_mh
 WP_APP_PASSWORD=xxxx xxxx xxxx xxxx xxxx xxxx
 
 GEMINI_API_KEY=AIzaSy...
-GEMINI_MODEL=gemini-2.0-flash
+OPENAI_API_KEY=sk-...
+ANTHROPIC_API_KEY=sk-ant-...
+AI_MODEL=gemini-2.0-flash
 ```
 
 ---
@@ -161,7 +163,11 @@ Los Secrets son las variables de entorno seguras de GitHub Actions.
 | `WP_URL` | `https://cordobarock.es/wp-json` | ✅ |
 | `WP_USER` | Tu usuario de WordPress | ✅ |
 | `WP_APP_PASSWORD` | La contraseña de aplicación generada | ✅ |
-| `GEMINI_API_KEY` | Tu API Key de Google Gemini | ✅ |
+| `GEMINI_API_KEY` | Tu API Key de Google Gemini | Depende (1) |
+| `OPENAI_API_KEY` | Tu API Key de OpenAI | Depende (1) |
+| `ANTHROPIC_API_KEY` | Tu API Key de Anthropic | Depende (1) |
+
+*(1) Es obligatorio configurar **al menos una** de las tres API Keys.*
 
 ### Variables de control (opcionales pero recomendadas)
 
@@ -318,7 +324,7 @@ jobs:
       limite: -1               # procesar todas
       estado_defecto: draft    # borrador hasta validar
       auto_publish_first: 0    # todos a borrador
-    secrets: inherit           # hereda WP_URL, WP_USER, GEMINI_API_KEY, etc.
+    secrets: inherit           # hereda WP_URL, WP_USER, GEMINI_API_KEY, OPENAI_API_KEY, etc.
 
   # Job opcional: notificar o loguear el resultado
   notificar-resultado:
@@ -539,7 +545,7 @@ Asegúrate de que:
 [ ] 4. Contraseña de Aplicación WP generada (la anterior revocada si existía)
 [ ] 5. API Key Gemini generada (la anterior revocada si estaba en el código)
 [ ] 6. Health check local correcto (todos los checks en ✅)
-[ ] 7. GitHub Secrets configurados (WP_URL, WP_USER, WP_APP_PASSWORD, GEMINI_API_KEY)
+[ ] 7. GitHub Secrets configurados (WP_URL, WP_USER, WP_APP_PASSWORD, GEMINI_API_KEY o alternativos)
 [ ] 8. Health check en GitHub Actions correcto
 [ ] 9. Prueba de noticia en borrador (local) ✓
 [ ] 10. Prueba de lote en borrador (local con --limite 2) ✓

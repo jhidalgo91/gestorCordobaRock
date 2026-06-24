@@ -28,23 +28,24 @@ La función publicar_lote_noticias() devuelve:
   }
 """
 
+from __future__ import annotations
 import time
 import html
 import re
 import requests
 from google import genai
+import openai
+import anthropic
 from google.genai import types
 
 from agent_config import (
     WP_URL, AUTH, HEADERS_GET,
-    GEMINI_API_KEY, GEMINI_MODEL,
+    GEMINI_API_KEY, OPENAI_API_KEY, ANTHROPIC_API_KEY, AI_MODEL,
     DEFAULT_AI_TONE, AI_TONE_INSTRUCTIONS,
     EVENT_CATEGORIES, EVENT_CAT_MAP_INV,
     PUBLISH_LIMIT, DEFAULT_WP_STATUS, AUTO_PUBLISH_FIRST,
 )
 
-# Inicializar cliente IA (nuevo SDK google-genai)
-_ai_client = genai.Client(api_key=GEMINI_API_KEY)
 
 
 # ==========================================
@@ -59,14 +60,37 @@ def _get_tone_instructions(tono: str, instrucciones_custom: str = "") -> str:
 
 
 def _run_ai_query(prompt: str, max_retries: int = 2) -> str:
-    """Ejecuta una consulta a Gemini con reintentos en caso de rate limit."""
+    """Ejecuta una consulta a la IA con reintentos y aplica delay."""
+    
+    print("  ⏳ Esperando 2 minutos (120s) para evitar saturación de API...")
+    time.sleep(120)
+
     for attempt in range(max_retries):
         try:
-            response = _ai_client.models.generate_content(
-                model=GEMINI_MODEL,
-                contents=prompt,
-            )
-            return response.text
+            if AI_MODEL.startswith("gpt"):
+                client = openai.Client(api_key=OPENAI_API_KEY)
+                res = client.chat.completions.create(
+                    model=AI_MODEL,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.1
+                )
+                return res.choices[0].message.content or ""
+            elif AI_MODEL.startswith("claude"):
+                client = anthropic.Anthropic(api_key=ANTHROPIC_API_KEY)
+                res = client.messages.create(
+                    model=AI_MODEL,
+                    max_tokens=2048,
+                    temperature=0.1,
+                    messages=[{"role": "user", "content": prompt}]
+                )
+                return res.content[0].text if res.content else ""
+            else:
+                _ai_client = genai.Client(api_key=GEMINI_API_KEY)
+                response = _ai_client.models.generate_content(
+                    model=AI_MODEL,
+                    contents=prompt,
+                )
+                return response.text
         except Exception as e:
             if "429" in str(e) and attempt < max_retries - 1:
                 print(f"  ⚠️  Rate limit (429), esperando 10s... (intento {attempt + 1})")

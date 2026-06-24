@@ -31,14 +31,16 @@ HEADERS_GET = {
 }
 
 # ==========================================
-# GOOGLE GEMINI AI
+# IA (Gemini, OpenAI, Anthropic)
 # ==========================================
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-GEMINI_MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.5-flash")
+OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY", "")
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+AI_MODEL = os.environ.get("AI_MODEL", "gemini-3.5-flash")
 
-if not GEMINI_API_KEY:
+if not (GEMINI_API_KEY or OPENAI_API_KEY or ANTHROPIC_API_KEY):
     raise EnvironmentError(
-        "❌ Falta variable de entorno: GEMINI_API_KEY es obligatoria.\n"
+        "❌ Falta variable de entorno: Es obligatoria al menos una API_KEY (GEMINI_API_KEY, OPENAI_API_KEY o ANTHROPIC_API_KEY).\n"
         "Añádela como GitHub Secret o en tu fichero .env local."
     )
 

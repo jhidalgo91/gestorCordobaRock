@@ -1,0 +1,17 @@
+{
+  "limite": 2,
+  "estado_defecto": "draft",
+  "auto_publish_first": 0,
+  "tono_ia": "rockero",
+  "generar_excerpt": true,
+  "noticias": [
+    {
+      "titulo": "BBK Legends Bilbao: Toda la información, mapa del recinto, horarios y últimas entradas para el festival con Tom Morello, Beat o Chris Isaak",
+      "apuntes": "Bilbao se prepara para recibir este fin de semana la edición del décimo aniversario del festival BBK Legends Bilbao. El evento contará con la destacada presencia de artistas internacionales de primer nivel como Tom Morello, Beat o Chris Isaak. Fuente: Mariskalrock (https://mariskalrock.com/actualidad/bbk-legends-bilbao-toda-la-informacion-mapa-del-recinto-horarios-y-ultimas-entradas-para-el-festival-con-tom-morello-beat-o-chris-isaak/)"
+    },
+    {
+      "titulo": "Noticias: Papa Roach + Casus Belli + Avalance",
+      "apuntes": "Papa Roach ha anunciado nuevas fechas de conciertos, incluyendo una única parada en nuestro país. Por su parte, Casus Belli estrena tema y vídeo, mientras que se revelan novedades sobre la banda nacional Avalance. Fuente: Dioses del Metal (https://diosesdelmetal.org/noticias-papa-roach-casus-belli-avalance/)"
+    }
+  ]
+}
