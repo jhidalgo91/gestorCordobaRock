@@ -123,9 +123,11 @@ jobs:
       borradores:  ${{ steps.agent.outputs.borradores }}
 
     steps:
-      # 1. Checkout
+      # 1. Checkout (explicitly referencing the agent repo so workflow_call works)
       - name: "📥 Checkout código"
         uses: actions/checkout@v4
+        with:
+          repository: jhidalgo91/gestorCordobaRock
 
       # 2. Python
       - name: "🐍 Configurar Python 3.11"
