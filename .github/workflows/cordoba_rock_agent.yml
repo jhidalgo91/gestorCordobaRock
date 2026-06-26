@@ -163,23 +163,35 @@ jobs:
       # 4. Preparar inputs — soporta los 3 triggers
       - name: "🔧 Preparar inputs"
         id: prepare
+        env:
+          RAW_ACTION: ${{ inputs.action || github.event.client_payload.action }}
+          RAW_PAYLOAD: ${{ inputs.payload || toJson(github.event.client_payload.payload) }}
+          RAW_LIMITE: ${{ inputs.limite || github.event.client_payload.limite || '-1' }}
+          RAW_ESTADO: ${{ inputs.estado_defecto || github.event.client_payload.estado_defecto || 'draft' }}
+          RAW_AUTO_PUB: ${{ inputs.auto_publish_first || github.event.client_payload.auto_publish_first || '0' }}
+          RAW_API_DELAY: ${{ inputs.api_delay_seconds || github.event.client_payload.api_delay_seconds || vars.API_DELAY_SECONDS || '120' }}
+          RAW_AI_MOD: ${{ inputs.ai_model || github.event.client_payload.ai_model || vars.AI_MODEL || 'gpt-4o-mini' }}
         run: |
           # Extraer valores según el tipo de trigger
-          ACTION="${{ inputs.action || github.event.client_payload.action }}"
-          PAYLOAD='${{ inputs.payload || toJson(github.event.client_payload.payload) }}'
-          LIMITE="${{ inputs.limite || github.event.client_payload.limite || '-1' }}"
-          ESTADO="${{ inputs.estado_defecto || github.event.client_payload.estado_defecto || 'draft' }}"
-          AUTO_PUB="${{ inputs.auto_publish_first || github.event.client_payload.auto_publish_first || '0' }}"
-          API_DELAY="${{ inputs.api_delay_seconds || github.event.client_payload.api_delay_seconds || vars.API_DELAY_SECONDS || '120' }}"
-          AI_MOD="${{ inputs.ai_model || github.event.client_payload.ai_model || vars.AI_MODEL || 'gpt-4o-mini' }}"
+          ACTION="$RAW_ACTION"
+          PAYLOAD="$RAW_PAYLOAD"
+          LIMITE="$RAW_LIMITE"
+          ESTADO="$RAW_ESTADO"
+          AUTO_PUB="$RAW_AUTO_PUB"
+          API_DELAY="$RAW_API_DELAY"
+          AI_MOD="$RAW_AI_MOD"
 
           # Sanear payload vacío
           if [ -z "$PAYLOAD" ] || [ "$PAYLOAD" = "null" ]; then
             PAYLOAD="{}"
           fi
 
+          EOF_DELIM=$(openssl rand -hex 8)
+
           echo "action=$ACTION"           >> $GITHUB_OUTPUT
-          echo "payload=$PAYLOAD"         >> $GITHUB_OUTPUT
+          echo "payload<<$EOF_DELIM"      >> $GITHUB_OUTPUT
+          echo "$PAYLOAD"                 >> $GITHUB_OUTPUT
+          echo "$EOF_DELIM"               >> $GITHUB_OUTPUT
           echo "limite=$LIMITE" >> $GITHUB_OUTPUT
           echo "estado=$ESTADO" >> $GITHUB_OUTPUT
           echo "auto_publish=$AUTO_PUB" >> $GITHUB_OUTPUT
@@ -223,11 +235,12 @@ jobs:
           AUTO_PUBLISH_FIRST: ${{ steps.prepare.outputs.auto_publish }}
           PUBLISH_LIMIT: ${{ steps.prepare.outputs.limite }}
           STEP_PAYLOAD: ${{ steps.prepare.outputs.payload }}
+          STEP_ACTION: ${{ steps.prepare.outputs.action }}
         run: |
-          ACTION="${{ steps.prepare.outputs.action }}"
-          LIMITE="${{ steps.prepare.outputs.limite }}"
-          ESTADO="${{ steps.prepare.outputs.estado }}"
-          AUTO_PUB="${{ steps.prepare.outputs.auto_publish }}"
+          ACTION="$STEP_ACTION"
+          LIMITE="$PUBLISH_LIMIT"
+          ESTADO="$DEFAULT_WP_STATUS"
+          AUTO_PUB="$AUTO_PUBLISH_FIRST"
 
           # Guardar payload en fichero — usar python para evitar problemas de quoting
           python3 -c "
